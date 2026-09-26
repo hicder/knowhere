@@ -151,6 +151,12 @@ struct AdditiveQuantizer : Quantizer {
     template <bool is_IP, Search_type_t effective_search_type>
     float compute_1_distance_LUT(const uint8_t* codes, const float* LUT) const;
 
+    /// Same result as compute_1_distance_LUT, given the already accumulated
+    /// LUT inner product of all M codewords of `codes`. Decodes the norm
+    /// stored after the codewords, if the search type has one.
+    template <bool is_IP, Search_type_t effective_search_type>
+    float finalize_1_distance_LUT(float accu_IP, const uint8_t* codes) const;
+
     /*
         float compute_1_L2sqr(const uint8_t* codes, const float* LUT);
     */
