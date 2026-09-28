@@ -86,6 +86,24 @@ class KnowhereConfig {
     SetClusteringType(const ClusteringType clustering_type);
 
     /**
+     * set the kernel used to compute distances to additive quantizer codes (HNSW_PRQ)
+     *   only applies when all codebooks use nbits = 8, otherwise GENERIC is always used.
+     *   takes effect for searches started after the call.
+     */
+    enum AQDistanceKernel {
+        AQ_AUTO = 0,  // currently AQ_SCALAR (default)
+        AQ_GENERIC,   // original bit-reader implementation
+        AQ_SCALAR,    // 8-bit byte-indexed scalar kernel, results identical to AQ_GENERIC
+        AQ_AVX512,    // 8-bit AVX-512 gather kernel, float rounding differs from AQ_GENERIC. AQ_SCALAR if unsupported
+    };
+
+    static void
+    SetAQDistanceKernel(const AQDistanceKernel kernel);
+
+    static AQDistanceKernel
+    GetAQDistanceKernel();
+
+    /**
      * The numebr of maximum parallel disk reads per thread.
      * On Linux, the default limit of `aio-max-nr` is 65536, so the product of `num_threads` and `max_events` (default
      * 128) should not exceed this value. You can type `sudo sysctl -a | grep fs.aio-max-nr` on your terminal to see

@@ -17,6 +17,7 @@
 #include "diskann/aio_context_pool.h"
 #endif
 #include "faiss/Clustering.h"
+#include "faiss/impl/AdditiveQuantizerLUT.h"
 #include "faiss/utils/distances.h"
 #include "knowhere/log.h"
 #include "knowhere/thread_pool.h"
@@ -135,6 +136,43 @@ KnowhereConfig::SetClusteringType(const ClusteringType clustering_type) {
         case ClusteringType::K_MEANS_PLUS_PLUS:
             faiss::clustering_type = faiss::ClusteringType::K_MEANS_PLUS_PLUS;
             break;
+    }
+}
+
+void
+KnowhereConfig::SetAQDistanceKernel(const AQDistanceKernel kernel) {
+    faiss::AQLutKernel faiss_kernel = faiss::AQLutKernel::AUTO;
+    switch (kernel) {
+        case AQDistanceKernel::AQ_AUTO:
+        default:
+            faiss_kernel = faiss::AQLutKernel::AUTO;
+            break;
+        case AQDistanceKernel::AQ_GENERIC:
+            faiss_kernel = faiss::AQLutKernel::GENERIC;
+            break;
+        case AQDistanceKernel::AQ_SCALAR:
+            faiss_kernel = faiss::AQLutKernel::SCALAR_8BIT;
+            break;
+        case AQDistanceKernel::AQ_AVX512:
+            faiss_kernel = faiss::AQLutKernel::AVX512_8BIT;
+            break;
+    }
+    faiss::set_aq_lut_kernel(faiss_kernel);
+    LOG_KNOWHERE_INFO_ << "Set AQ distance kernel to " << faiss::aq_lut_kernel_name(faiss_kernel);
+}
+
+KnowhereConfig::AQDistanceKernel
+KnowhereConfig::GetAQDistanceKernel() {
+    switch (faiss::get_aq_lut_kernel()) {
+        case faiss::AQLutKernel::GENERIC:
+            return AQDistanceKernel::AQ_GENERIC;
+        case faiss::AQLutKernel::SCALAR_8BIT:
+            return AQDistanceKernel::AQ_SCALAR;
+        case faiss::AQLutKernel::AVX512_8BIT:
+            return AQDistanceKernel::AQ_AVX512;
+        case faiss::AQLutKernel::AUTO:
+        default:
+            return AQDistanceKernel::AQ_AUTO;
     }
 }
 

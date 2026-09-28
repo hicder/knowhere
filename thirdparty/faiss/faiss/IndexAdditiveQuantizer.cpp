@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstring>
 
+#include <faiss/impl/AdditiveQuantizerLUT.h>
 #include <faiss/impl/FaissAssert.h>
 #include <faiss/impl/ResidualQuantizer.h>
 #include <faiss/impl/ResultHandler.h>
@@ -79,11 +80,14 @@ struct AQDistanceComputerLUT : FlatCodesDistanceComputer {
     const AdditiveQuantizer& aq;
     size_t d;
 
+    const AQLutKernel kernel;
+
     explicit AQDistanceComputerLUT(const IndexAdditiveQuantizer& iaq)
             : FlatCodesDistanceComputer(iaq.codes.data(), iaq.code_size),
               LUT(iaq.aq->total_codebook_size + iaq.d * 2),
               aq(*iaq.aq),
-              d(iaq.d) {}
+              d(iaq.d),
+              kernel(resolve_aq_lut_kernel(*iaq.aq)) {}
 
     float bias;
     void set_query(const float* x) final {
@@ -104,7 +108,67 @@ struct AQDistanceComputerLUT : FlatCodesDistanceComputer {
     }
 
     float distance_to_code(const uint8_t* code) final {
-        return bias + aq.compute_1_distance_LUT<is_IP, st>(code, LUT.data());
+        switch (kernel) {
+#if defined(__x86_64__)
+            case AQLutKernel::AVX512_8BIT:
+                return bias +
+                        aq.finalize_1_distance_LUT<is_IP, st>(
+                                aq_lut_accumulate_8bit_avx512(
+                                        code, LUT.data(), aq.M),
+                                code);
+#endif
+            case AQLutKernel::SCALAR_8BIT:
+                return bias +
+                        aq.finalize_1_distance_LUT<is_IP, st>(
+                                aq_lut_accumulate_8bit(code, LUT.data(), aq.M),
+                                code);
+            default:
+                return bias +
+                        aq.compute_1_distance_LUT<is_IP, st>(code, LUT.data());
+        }
+    }
+
+    void distances_batch_4(
+            const idx_t idx0,
+            const idx_t idx1,
+            const idx_t idx2,
+            const idx_t idx3,
+            float& dis0,
+            float& dis1,
+            float& dis2,
+            float& dis3) final {
+        if (kernel == AQLutKernel::GENERIC) {
+            FlatCodesDistanceComputer::distances_batch_4(
+                    idx0, idx1, idx2, idx3, dis0, dis1, dis2, dis3);
+            return;
+        }
+        const uint8_t* c0 = codes + idx0 * code_size;
+        const uint8_t* c1 = codes + idx1 * code_size;
+        const uint8_t* c2 = codes + idx2 * code_size;
+        const uint8_t* c3 = codes + idx3 * code_size;
+        float accu[4];
+#if defined(__x86_64__)
+        if (kernel == AQLutKernel::AVX512_8BIT) {
+            aq_lut_accumulate_8bit_batch4_avx512(
+                    c0, c1, c2, c3, LUT.data(), aq.M, accu);
+        } else
+#endif
+        {
+            aq_lut_accumulate_8bit_batch4(
+                    c0, c1, c2, c3, LUT.data(), aq.M, accu);
+        }
+        const float d0 =
+                bias + aq.finalize_1_distance_LUT<is_IP, st>(accu[0], c0);
+        const float d1 =
+                bias + aq.finalize_1_distance_LUT<is_IP, st>(accu[1], c1);
+        const float d2 =
+                bias + aq.finalize_1_distance_LUT<is_IP, st>(accu[2], c2);
+        const float d3 =
+                bias + aq.finalize_1_distance_LUT<is_IP, st>(accu[3], c3);
+        dis0 = d0;
+        dis1 = d1;
+        dis2 = d2;
+        dis3 = d3;
     }
 
     virtual ~AQDistanceComputerLUT() = default;

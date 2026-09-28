@@ -565,4 +565,55 @@ float AdditiveQuantizer::
     return norm2 - 2 * accu;
 }
 
+template <bool is_IP, AdditiveQuantizer::Search_type_t st>
+float AdditiveQuantizer::finalize_1_distance_LUT(
+        float accu,
+        const uint8_t* codes) const {
+    if constexpr (st == ST_LUT_nonorm) {
+        return is_IP ? accu : -accu;
+    } else {
+        static_assert(!is_IP, "norms are only used for L2 search");
+        BitstringReader bs(codes, code_size);
+        bs.i = tot_bits - norm_bits;
+        if constexpr (st == ST_norm_float) {
+            uint32_t norm_i = bs.read(32);
+            float norm2;
+            memcpy(&norm2, &norm_i, 4);
+            return norm2 - 2 * accu;
+        } else if constexpr (st == ST_norm_cqint8) {
+            return decode_qcint(bs.read(8)) - 2 * accu;
+        } else if constexpr (st == ST_norm_cqint4) {
+            return decode_qcint(bs.read(4)) - 2 * accu;
+        } else if constexpr (st == ST_norm_qint8) {
+            return decode_qint8(bs.read(8), norm_min, norm_max) - 2 * accu;
+        } else if constexpr (st == ST_norm_qint4) {
+            return decode_qint4(bs.read(4), norm_min, norm_max) - 2 * accu;
+        } else {
+            FAISS_THROW_FMT("search type %d not supported", int(st));
+        }
+    }
+}
+
+template float AdditiveQuantizer::finalize_1_distance_LUT<
+        true,
+        AdditiveQuantizer::ST_LUT_nonorm>(float, const uint8_t*) const;
+template float AdditiveQuantizer::finalize_1_distance_LUT<
+        false,
+        AdditiveQuantizer::ST_LUT_nonorm>(float, const uint8_t*) const;
+template float AdditiveQuantizer::finalize_1_distance_LUT<
+        false,
+        AdditiveQuantizer::ST_norm_float>(float, const uint8_t*) const;
+template float AdditiveQuantizer::finalize_1_distance_LUT<
+        false,
+        AdditiveQuantizer::ST_norm_cqint8>(float, const uint8_t*) const;
+template float AdditiveQuantizer::finalize_1_distance_LUT<
+        false,
+        AdditiveQuantizer::ST_norm_cqint4>(float, const uint8_t*) const;
+template float AdditiveQuantizer::finalize_1_distance_LUT<
+        false,
+        AdditiveQuantizer::ST_norm_qint8>(float, const uint8_t*) const;
+template float AdditiveQuantizer::finalize_1_distance_LUT<
+        false,
+        AdditiveQuantizer::ST_norm_qint4>(float, const uint8_t*) const;
+
 } // namespace faiss

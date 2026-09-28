@@ -12,10 +12,11 @@
 include_directories(${CMAKE_SOURCE_DIR})
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
-find_package(HDF5 REQUIRED)
+find_package(HDF5 QUIET)
+find_package(GTest QUIET)
+if(HDF5_FOUND AND GTest_FOUND)
 include_directories(${HDF5_INCLUDE_DIRS})
 
-find_package(GTest REQUIRED)
 set(unittest_libs
         GTest::gtest
         GTest::gtest_main)
@@ -55,6 +56,14 @@ benchmark_test(benchmark_simd_qps              hdf5/benchmark_simd_qps.cpp)
 
 benchmark_test(gen_hdf5_file hdf5/gen_hdf5_file.cpp)
 benchmark_test(gen_fbin_file hdf5/gen_fbin_file.cpp)
+else()
+    message(STATUS "HDF5/GTest benchmarks disabled because their dependencies were not found")
+endif()
+
+# Standalone synthetic benchmark of the AQ LUT distance kernels used by HNSW_PRQ
+add_executable(benchmark_aq_lut_kernel benchmark_aq_lut_kernel.cpp)
+target_link_libraries(benchmark_aq_lut_kernel knowhere)
+install(TARGETS benchmark_aq_lut_kernel DESTINATION unittest)
 
 # Sparse SIMD benchmark (x86_64 only, standalone, no HDF5 required)
 # Only build on x86_64/AMD64, skip on ARM/aarch64/arm64
